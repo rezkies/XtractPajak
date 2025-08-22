@@ -88,8 +88,7 @@ if uploaded_file is not None:
                 if not (date_match or kwt_match or ntpn_match or tax_match or value_match):
                     try:
                         # Header fragment to remove if it's inside the line
-                        header_fragment = "Pemotongan Penyetoran Saldo No. Tanggal Uraian ( Rp ) ( Rp ) ( Rp )"
-                        if line == header_fragment:
+                        if ("Pemotongan" in line and "Penyetoran" in line) or "Uraian" in line or "Rp" in line:
                             continue
                         # Only add if something remains
                         current_entry['uraian'] += line + ' '
