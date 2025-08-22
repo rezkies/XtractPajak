@@ -28,8 +28,17 @@ def normalize_entries(data):
         
     return normalized_entries
 
-# Streamlit app
-st.title("PDF to Excel Tax Extractor")
+# Header Aplikasi
+st.title("🧾 XtractPajak: Konversi BKPP ke Excel")
+
+# Deskripsi Penggunaan
+st.markdown("""
+Selamat datang di **XtractPajak** — alat yang dirancang untuk membantu Anda mengonversi **Buku Kas Pembantu Pajak (BKPP)** dari **Siskeudes** menjadi spreadsheet Excel yang rapi dan terstruktur hanya dalam beberapa klik.
+
+### 📤 Cara Menggunakan:
+1. Unggah file **Buku Kas Pembantu Pajak** dari aplikasi **Siskeudes** menggunakan uploader di bawah ini.
+2. Tunggu proses konversi selesai dan unduh file Excel hasilnya.
+""")
 
 uploaded_file = st.file_uploader("Upload a PDF file", type="pdf")
 
@@ -115,3 +124,10 @@ if uploaded_file is not None:
         file_name=excel_filename,
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
+
+st.markdown("""
+---
+#### 👨‍💻 Kredit  
+Dikembangkan oleh [@rezkies](https://github.com/rezkies)  
+Lihat kode sumber di [GitHub](https://github.com/rezkies/XtractPajak)
+""")
