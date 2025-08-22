@@ -47,7 +47,7 @@ if uploaded_file is not None:
                 date_pattern = r'(\d{2}/\d{2}/\d{4})'
                 kwt_pattern = r'(\d{4,5}\/[A-Z]{3}\/\d{2}\.\d{4}\/\d{4})'
                 ntpn_pattern = r'NTPN\s*:\s*([A-Z0-9]+)'
-                tax_pattern = r'Potongan.* (21|22|23|Pusat)'
+                tax_pattern = r'Potongan Pajak (PPN Pusat|PPh Pasal 21|PPh Pasal 22|PPh Pasal 23)'
                 value_pattern = r'\d{1,3}(?:\.\d{3})*(?:,\d{2})'
 
                 date_match = re.search(date_pattern, line)
@@ -75,13 +75,21 @@ if uploaded_file is not None:
                 if ntpn_match:
                     current_entry['ntpn'] = ntpn_match.group(1)
                 if tax_match and value_match:
-                    current_entry['tax'].append(tax_match.group(0))
-                    current_entry['pemotongan'].append(value_match[0])
-                    current_entry['penyetoran'].append(value_match[1])
-                    current_entry['saldo'].append(value_match[2])
+                    tax_type = tax_match.group(1).strip()
+                
+                    # Ensure there are at least 3 numeric values (pemotongan, penyetoran, saldo)
+                    if len(value_match) >= 3:
+                        current_entry['tax'].append(tax_type)
+                        current_entry['pemotongan'].append(value_match[0])
+                        current_entry['penyetoran'].append(value_match[1])
+                        current_entry['saldo'].append(value_match[2])
                 if not (date_match or kwt_match or ntpn_match or tax_match or value_match):
                     try:
-                        current_entry['uraian'] += line.strip() + ' '
+                        # Remove the known header fragment if it exists anywhere in the line
+                        header_regex = r'Pemotongan\s+Penyetoran\s+Saldo\s+No\.\s+Tanggal\s+Uraian\s+\( Rp \)\s+\( Rp \)\s+\( Rp \)'
+                        cleaned_line = re.sub(header_regex, '', cleaned_line, flags=re.IGNORECASE)
+                        # Add the cleaned line to uraian
+                        current_entry['uraian'] += cleaned_line.strip() + ' '
                     except:
                         continue
 
