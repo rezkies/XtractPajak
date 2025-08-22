@@ -85,11 +85,14 @@ if uploaded_file is not None:
                         current_entry['saldo'].append(value_match[2])
                 if not (date_match or kwt_match or ntpn_match or tax_match or value_match):
                     try:
-                        # Remove the known header fragment if it exists anywhere in the line
-                        header_regex = r'Pemotongan\s+Penyetoran\s+Saldo\s+No\.\s+Tanggal\s+Uraian\s+\( Rp \)\s+\( Rp \)\s+\( Rp \)'
-                        cleaned_line = re.sub(header_regex, '', cleaned_line, flags=re.IGNORECASE)
-                        # Add the cleaned line to uraian
-                        current_entry['uraian'] += cleaned_line.strip() + ' '
+                        cleaned_line = line.strip()
+                        # Header fragment to remove if it's inside the line
+                        header_fragment = "Pemotongan Penyetoran Saldo No. Tanggal Uraian ( Rp ) ( Rp ) ( Rp )"
+                        # Remove only the fragment, leave other text
+                        cleaned_line = cleaned_line.replace(header_fragment, '').strip()
+                        # Only add if something remains
+                        if cleaned_line:
+                            current_entry['uraian'] += cleaned_line + ' '
                     except:
                         continue
 
