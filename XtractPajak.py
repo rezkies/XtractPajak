@@ -35,7 +35,9 @@ uploaded_file = st.file_uploader("Upload a PDF file", type="pdf")
 
 if uploaded_file is not None:
     extracted_data = []
-
+    pdf_filename = uploaded_file.name.rsplit('.', 1)[0]
+    excel_filename = f"{pdf_filename}.xlsx"
+    
     with pdfplumber.open(uploaded_file) as pdf:
         current_entry = {}
 
@@ -85,12 +87,12 @@ if uploaded_file is not None:
                         current_entry['saldo'].append(value_match[2])
                 if not (date_match or kwt_match or ntpn_match or tax_match or value_match):
                     try:
-                        cleaned_line = line.strip()
                         # Header fragment to remove if it's inside the line
                         header_fragment = "Pemotongan Penyetoran Saldo No. Tanggal Uraian ( Rp ) ( Rp ) ( Rp )"
-                        # Remove only the fragment, leave other text
-                        cleaned_line = cleaned_line.replace(header_fragment, '').strip()
-                        current_entry['uraian'] += cleaned_line + ' '
+                        if line == header_fragment:
+                            continue
+                        # Only add if something remains
+                        current_entry['uraian'] += line + ' '
                     except:
                         continue
 
@@ -111,6 +113,6 @@ if uploaded_file is not None:
     st.download_button(
         label="Download Excel file",
         data=output,
-        file_name="normalized_data.xlsx",
+        file_name=excel_filename,
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
