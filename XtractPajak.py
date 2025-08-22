@@ -47,7 +47,7 @@ if uploaded_file is not None:
                 date_pattern = r'(\d{2}/\d{2}/\d{4})'
                 kwt_pattern = r'(\d{4,5}\/[A-Z]{3}\/\d{2}\.\d{4}\/\d{4})'
                 ntpn_pattern = r'NTPN\s*:\s*([A-Z0-9]+)'
-                tax_pattern = r'Potongan Pajak (PPN Pusat|PPh Pasal 21|PPh Pasal 22|PPh Pasal 23)'
+                tax_pattern = r'(Uang Muka dan Jaminan|Pajak Restoran, Rumah Makan|Potongan Pajak (PPN Pusat|PPh Pasal 21|PPh Pasal 22|PPh Pasal 23|Lainnnya))'
                 value_pattern = r'\d{1,3}(?:\.\d{3})*(?:,\d{2})'
 
                 date_match = re.search(date_pattern, line)
@@ -90,9 +90,7 @@ if uploaded_file is not None:
                         header_fragment = "Pemotongan Penyetoran Saldo No. Tanggal Uraian ( Rp ) ( Rp ) ( Rp )"
                         # Remove only the fragment, leave other text
                         cleaned_line = cleaned_line.replace(header_fragment, '').strip()
-                        # Only add if something remains
-                        if cleaned_line:
-                            current_entry['uraian'] += cleaned_line + ' '
+                        current_entry['uraian'] += cleaned_line + ' '
                     except:
                         continue
 
