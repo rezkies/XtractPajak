@@ -111,6 +111,12 @@ if uploaded_file is not None:
     normalized_data = normalize_entries(extracted_data)
     df = pd.DataFrame(normalized_data)
 
+    # Buat ringkasan total berdasarkan jenis pajak
+    summary = df.groupby("tax")[["pemotongan", "penyetoran"]].sum().reset_index()
+
+    st.subheader("📊 Ringkasan Pemotongan dan Penyetoran per Jenis Pajak")
+    st.dataframe(summary.style.format({"pemotongan": "Rp {:,.2f}", "penyetoran": "Rp {:,.2f}"}))
+    
     # Convert DataFrame to Excel in memory
     output = BytesIO()
     with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
