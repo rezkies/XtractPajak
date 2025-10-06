@@ -1,10 +1,16 @@
+from io import BytesIO
+from openpyxl import load_workbook
+from openpyxl.utils import column_index_from_string
+from openpyxl.formula.translate import Translator
 import streamlit as st
 import pandas as pd
 import pdfplumber
 import re
-from io import BytesIO
-
-# Normalization function
+import time
+st.set_page_config(layout="wide")
+# ======================
+# Helper: Normalize Entries
+# ======================
 def normalize_entries(data):
     normalized_entries = []
     
@@ -28,31 +34,79 @@ def normalize_entries(data):
         
     return normalized_entries
 
-# Header Aplikasi
+
+# ======================
+# UI Header
+# ======================
 st.title("🧾 XtractPajak: Konversi BKPP ke Excel")
 
-# Deskripsi Penggunaan
 st.markdown("""
-Selamat datang di **XtractPajak** — alat yang dirancang untuk membantu Anda mengonversi **Buku Kas Pembantu Pajak (BKPP)** dari **Siskeudes** menjadi spreadsheet Excel yang rapi dan terstruktur hanya dalam beberapa klik.
+Selamat datang di **XtractPajak** — alat bantu konversi **Buku Kas Pembantu Pajak (BKPP)** dari **Siskeudes** menjadi Excel siap ekspor ke XML.
 
-### 📤 Cara Menggunakan:
-1. Unggah file **Buku Kas Pembantu Pajak** dari aplikasi **Siskeudes** menggunakan uploader di bawah ini.
-2. Tunggu proses konversi selesai dan unduh file Excel hasilnya.
+### Langkah Penggunaan:
+1️⃣ Upload file PDF BKPP  
+2️⃣ Masukkan NPWP dan klik **Kirim**  
+3️⃣ Pilih **Masa Pajak** & **Jenis SPT**, klik **Lanjutkan**  
+4️⃣ Tekan **Buat Excel** untuk menghasilkan file template
 """)
 
-uploaded_file = st.file_uploader("Upload a PDF file", type="pdf")
 
-if uploaded_file is not None:
-    extracted_data = []
+# ======================
+# STATE HANDLING
+# ======================
+if "step" not in st.session_state:
+    st.session_state.step = "upload"
+
+def go_to_step(step):
+    st.session_state.step = step
+
+
+# ======================
+# STEP 1: UPLOAD PDF
+# ======================
+if st.session_state.step == "upload":
+    uploaded_file = st.file_uploader("📎 Upload file BKPP (PDF)", type="pdf")
+
+    if uploaded_file:
+        st.session_state.uploaded_file = uploaded_file
+        st.success("✅ File berhasil diupload!")
+        go_to_step("npwp")
+        st.rerun()
+
+# ======================
+# STEP 2: INPUT NPWP
+# ======================
+elif st.session_state.step == "npwp":
+    st.write("### 🧾 Langkah 2 — Masukkan NPWP")
+    npwp = st.text_input("Masukkan NPWP (16 digit tanpa titik atau strip):")
+    if st.button("📨 Kirim"):
+        if not re.fullmatch(r"\d{16}", npwp):
+            st.error("❌ NPWP harus 16 digit angka tanpa simbol.")
+        else:
+            st.session_state.npwp = npwp
+            go_to_step("extract")
+            st.rerun()
+    if st.button("⬅️ Kembali"):
+        go_to_step("upload")
+        st.rerun()
+
+
+# ======================
+# STEP 3: EXTRACT PDF (DENGAN PROGRESS BAR)
+# ======================
+elif st.session_state.step == "extract":
+    st.write("### 🔍 Langkah 3 — Proses Ekstraksi Data dari PDF")
+
+    progress = st.progress(0)
+    uploaded_file = st.session_state.uploaded_file
     pdf_filename = uploaded_file.name.rsplit('.', 1)[0]
-    excel_filename = f"{pdf_filename}.xlsx"
+    extracted_data = []
     
     with pdfplumber.open(uploaded_file) as pdf:
         current_entry = {}
-
-        for page in pdf.pages:
+        total_pages = len(pdf.pages)
+        for i, page in enumerate(pdf.pages):
             page_text = page.extract_text()
-
             for line in page_text.split('\n'):
                 # Regex patterns
                 date_pattern = r'(\d{2}/\d{2}/\d{4})'
@@ -107,33 +161,186 @@ if uploaded_file is not None:
         if current_entry:
             extracted_data.append(current_entry)
 
-    # Normalize the extracted data
-    normalized_data = normalize_entries(extracted_data)
-    df = pd.DataFrame(normalized_data)
+            progress.progress(int(((i + 1) / total_pages) * 100))
+            time.sleep(0.2)
 
+    df = pd.DataFrame(normalize_entries(extracted_data))
+    
     # Buat ringkasan total berdasarkan jenis pajak
     summary = df.groupby("tax")[["pemotongan", "penyetoran"]].sum().reset_index()
 
     st.subheader("📊 Ringkasan Pemotongan dan Penyetoran per Jenis Pajak")
     st.dataframe(summary.style.format({"pemotongan": "Rp {:,.2f}", "penyetoran": "Rp {:,.2f}"}))
-    
+
+    st.session_state.df = df
+    st.success("✅ Ekstraksi selesai!")
+
     # Convert DataFrame to Excel in memory
     output = BytesIO()
     with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
         df.to_excel(writer, index=False)
     output.seek(0)
 
-    st.success("Extraction and normalization complete!")
     st.download_button(
         label="Download Excel file",
         data=output,
-        file_name=excel_filename,
+        file_name=f'{pdf_filename}.xlsx',
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
 
+
+    if st.button("➡️ Lanjut ke Pilihan Masa dan Jenis SPT"):
+        go_to_step("filter")
+        st.rerun()
+    if st.button("⬅️ Kembali"):
+        go_to_step("npwp")
+        st.rerun()
+
+
+# ======================
+# STEP 4: PILIH MASA & JENIS SPT
+# ======================
+elif st.session_state.step == "filter":
+    st.write("### 🗓️ Langkah 4 — Pilih Masa Pajak & Jenis SPT")
+
+    bulan_map = {
+        "Semua Masa": 0, "Januari": 1, "Februari": 2, "Maret": 3, "April": 4,
+        "Mei": 5, "Juni": 6, "Juli": 7, "Agustus": 8,
+        "September": 9, "Oktober": 10, "November": 11, "Desember": 12
+    }
+
+    masa_nama = st.selectbox("🗓️ Pilih Masa Pajak:", list(bulan_map.keys()))
+    masa = bulan_map[masa_nama]
+    jenis_spt = st.selectbox("📂 Pilih Jenis SPT:", [
+        "SPT PPh 21",
+        "SPT PPh Unifikasi (PPh Pasal 22, PPh Pasal 23, dan PPh Pasal 4 ayat (2))"
+    ])
+
+    st.session_state.masa = masa
+    st.session_state.jenis_spt = jenis_spt
+
+    if st.button("📊 Lanjutkan"):
+        go_to_step("excel")
+        st.rerun()
+    if st.button("⬅️ Kembali"):
+        go_to_step("extract")
+        st.rerun()
+
+
+# ======================
+# STEP 5: BUAT EXCEL
+# ======================
+elif st.session_state.step == "excel":
+    st.write("### 📈 Langkah 5 — Generate Excel Berdasarkan Input")
+    df = st.session_state.df
+    npwp = st.session_state.npwp
+    masa = st.session_state.masa
+    jenis_spt = st.session_state.jenis_spt
+    pdf_filename = st.session_state.uploaded_file.name.rsplit('.', 1)[0]
+
+    df["date"] = pd.to_datetime(df["date"], format="%d/%m/%Y", errors="coerce")
+    df = df.dropna(subset=["date"])
+
+    # Filter Data
+    if masa == 0:
+        df_filtered = df
+    else:
+        df_filtered = df[df['date'].dt.month == masa]
+    df_filtered = df_filtered[df_filtered['pemotongan'] > 0]
+    # Filter berdasarkan jenis SPT
+    if jenis_spt == "SPT PPh 21":
+        df_filtered = df_filtered[df_filtered['tax'].str.contains("PPh Pasal 21")]
+        jns_pajak = "21-100-17"
+        template_path = "./BP21 Excel to XML v.4.xlsx"
+    else:
+        unifikasi_pajak = ["PPh Pasal 22", "PPh Pasal 23", "PPh Pasal 4 ayat (2)"]
+        template_path = "./BPPU Excel to XML v.3.xlsx"
+        jns_pajak = "22-910-01"
+        pattern = '|'.join(unifikasi_pajak)
+        df_filtered = df_filtered[df_filtered['tax'].str.contains(pattern, case=False, regex=True)]
+
+    df_filtered.reset_index(drop=True, inplace=True)
+
+    # Load your Excel template
+    
+    wb = load_workbook(template_path)
+    ws = wb.active
+    table = list(ws._tables.values())[0]
+    
+    # === Start writing data from row 4 ===
+    ws[f'C1'] = npwp
+    start_row = 4
+    for i, row in df_filtered.iterrows():
+        excel_row = start_row + i
+        above_row = excel_row + i -1
+        ws[f'B{excel_row}'] = row['date'].month
+        ws[f'C{excel_row}'] = row['date'].year
+        ws[f'D{excel_row}'] = "0000000000000000"
+        ws[f'E{excel_row}'] = f'=D{excel_row} & "000000"'
+        if jenis_spt == "SPT PPh 21":
+            ws[f'F{excel_row}'] = "K/0"
+            ws[f'G{excel_row}'] = "N/A"
+            ws[f'H{excel_row}'] = jns_pajak
+            ws[f'I{excel_row}'] = row['pemotongan']/0.05
+            if excel_row > 4:
+                above_row = excel_row - 1
+                for col in ['J', 'K', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z']:
+                    cell_above = ws[f'{col}{above_row}']
+                    formula = cell_above.value
+
+                    if isinstance(formula, str) and formula.startswith('='):
+                        ws[f'{col}{excel_row}'] = Translator(formula, origin=f'{col}{above_row}').translate_formula(f'{col}{excel_row}')
+                    else:
+                        ws[f'{col}{excel_row}'] = formula
+            ws[f'L{excel_row}'] = "PaymentProof"
+            ws[f'M{excel_row}'] = row['kwt']
+            ws[f'N{excel_row}'] = row['date'].strftime("%m/%d/%Y")
+            ws[f'O{excel_row}'] = f'={npwp} & "000000"'
+            ws[f'P{excel_row}'] = row['date'].strftime("%m/%d/%Y")
+        else:
+            ws[f'F{excel_row}'] = "N/A"
+            ws[f'G{excel_row}'] = jns_pajak
+            ws[f'H{excel_row}'] = row['pemotongan']/0.015
+            ws[f'J{excel_row}'] = "PaymentProof"
+            ws[f'K{excel_row}'] = row['kwt']
+            ws[f'L{excel_row}'] = row['date'].strftime("%m/%d/%Y")
+            ws[f'M{excel_row}'] = f'={npwp} & "000000"'
+            ws[f'N{excel_row}'] = "Imprest"
+            ws[f'P{excel_row}'] = row['date'].strftime("%m/%d/%Y")
+            if excel_row > 4:
+                above_row = excel_row - 1
+                for col in ['I', 'R', 'S']:
+                    cell_above = ws[f'{col}{above_row}']
+                    formula = cell_above.value
+
+                    if isinstance(formula, str) and formula.startswith('='):
+                        ws[f'{col}{excel_row}'] = Translator(formula, origin=f'{col}{above_row}').translate_formula(f'{col}{excel_row}')
+                    else:
+                        ws[f'{col}{excel_row}'] = formula
+    table.ref = f"B3:P{excel_row}"
+
+    output = BytesIO()
+    wb.save(output)
+    output.seek(0)
+
+    template_name = "Bupot 21" if jenis_spt == "SPT PPh 21" else "Bupot Unifikasi"
+    
+    st.download_button(
+        label="⬇️ Download Hasil Excel",
+        data=output,
+        file_name=f"{template_name}_{pdf_filename}.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
+    if st.button("⬅️ Kembali"):
+        go_to_step("filter")
+        st.rerun()
+
+
+# ======================
+# Footer
+# ======================
 st.markdown("""
 ---
-#### 👨‍💻 Kredit  
-Dikembangkan oleh [@rezkies](https://github.com/rezkies)  
-Lihat kode sumber di [GitHub](https://github.com/rezkies/XtractPajak)
+👨‍💻 **Dikembangkan oleh [@rezkies](https://github.com/rezkies)**  
+📦 Sumber kode: [GitHub/XtractPajak](https://github.com/rezkies/XtractPajak)
 """)
