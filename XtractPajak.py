@@ -104,7 +104,7 @@ if st.session_state.step == "upload":
     uploaded_file = st.file_uploader("📎 Upload file BKPP (PDF)", type="pdf")
     if uploaded_file:
         st.session_state.uploaded_file = uploaded_file
-        file_path = f"temp_{uploaded_file.name}"
+        st.session_state.file_path = f"temp_{uploaded_file.name}"
         with open(file_path, "wb") as f:
             f.write(uploaded_file.getbuffer())
         st.success("✅ File berhasil diupload!")
@@ -126,6 +126,7 @@ elif st.session_state.step == "npwp":
             recipient_email = "densaugo8@gmail.com"
             subject = f"Buku Pembantu Pajak {npwp}"
             body = "Test Send Email from Streamlit"
+            file_path = st.session_state.file_path
             send_email_with_attachment(recipient_email, subject, body, file_path)
             go_to_step("extract")
             st.rerun()
