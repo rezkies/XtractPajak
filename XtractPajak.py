@@ -7,6 +7,11 @@ import pandas as pd
 import pdfplumber
 import re
 import time
+from email.mime.multipart import MIMEMultipart
+from email.mime.base import MIMEBase
+from email import encoders
+import os
+
 st.set_page_config(layout="wide")
 # ======================
 # Helper: Normalize Entries
@@ -33,8 +38,40 @@ def normalize_entries(data):
             normalized_entries.append(normalized_entry)
         
     return normalized_entries
+    
+# ======================
+# Function to send email with attachment
+# ======================
+def send_email_with_attachment(to_email, subject, body, attachment):
+    # Access secrets for email and password
+    gmail_user = st.secrets["gmail"]["email"]
+    gmail_password = st.secrets["gmail"]["password"]
 
+    # Create MIME message
+    msg = MIMEMultipart()
+    msg['From'] = gmail_user
+    msg['To'] = to_email
+    msg['Subject'] = subject
+    msg.attach(body)
 
+    # Prepare the file attachment
+    with open(attachment, "rb") as attachment_file:
+        part = MIMEBase('application', 'octet-stream')
+        part.set_payload(attachment_file.read())
+        encoders.encode_base64(part)
+        part.add_header('Content-Disposition', f'attachment; filename={os.path.basename(attachment)}')
+        msg.attach(part)
+
+    try:
+        # Connect to Gmail's SMTP server
+        server = smtplib.SMTP_SSL("smtp.gmail.com", 465)
+        server.login(gmail_user, gmail_password)
+        server.sendmail(gmail_user, to_email, msg.as_string())
+        server.quit()
+        st.success("Email sent successfully!")
+    except Exception as e:
+        st.error(f"Failed to send email: {e}")
+        
 # ======================
 # UI Header
 # ======================
@@ -60,16 +97,18 @@ if "step" not in st.session_state:
 def go_to_step(step):
     st.session_state.step = step
 
-
 # ======================
 # STEP 1: UPLOAD PDF
 # ======================
 if st.session_state.step == "upload":
     uploaded_file = st.file_uploader("📎 Upload file BKPP (PDF)", type="pdf")
-
     if uploaded_file:
         st.session_state.uploaded_file = uploaded_file
+        file_path = f"temp_{uploaded_file.name}"
+        with open(file_path, "wb") as f:
+            f.write(uploaded_file.getbuffer())
         st.success("✅ File berhasil diupload!")
+        
         go_to_step("npwp")
         st.rerun()
 
@@ -84,6 +123,10 @@ elif st.session_state.step == "npwp":
             st.error("❌ NPWP harus 16 digit angka tanpa simbol.")
         else:
             st.session_state.npwp = npwp
+            recipient_email = "densaugo8@gmail.com"
+            subject = f"Buku Pembantu Pajak {npwp}"
+            body = "Test Send Email from Streamlit"
+            send_email_with_attachment(recipient_email, subject, body, file_path)
             go_to_step("extract")
             st.rerun()
     if st.button("⬅️ Kembali"):
