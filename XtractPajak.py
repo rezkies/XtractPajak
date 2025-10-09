@@ -1,16 +1,18 @@
+from email.mime.multipart import MIMEMultipart
+from email.mime.base import MIMEBase
+from email.mime.text import MIMEText
+from email import encoders
 from io import BytesIO
 from openpyxl import load_workbook
 from openpyxl.utils import column_index_from_string
 from openpyxl.formula.translate import Translator
-import streamlit as st
+import os
 import pandas as pd
 import pdfplumber
 import re
+import smtplib
+import streamlit as st
 import time
-from email.mime.multipart import MIMEMultipart
-from email.mime.base import MIMEBase
-from email import encoders
-import os
 
 st.set_page_config(layout="wide")
 # ======================
@@ -39,11 +41,8 @@ def normalize_entries(data):
         
     return normalized_entries
     
-# ======================
-# Function to send email with attachment
-# ======================
-def send_email_with_attachment(to_email, subject, body, attachment):
-    # Access secrets for email and password
+# Retry logic for email sending
+def send_email_with_attachment(to_email, subject, body, attachment, retries=3, delay=5):
     gmail_user = st.secrets["gmail"]["email"]
     gmail_password = st.secrets["gmail"]["password"]
 
@@ -52,9 +51,11 @@ def send_email_with_attachment(to_email, subject, body, attachment):
     msg['From'] = gmail_user
     msg['To'] = to_email
     msg['Subject'] = subject
-    msg.attach(body)
+    
+    # Ensure the body is properly attached as MIMEText
+    msg.attach(MIMEText(body, 'plain'))  # Wrap body in MIMEText
 
-    # Prepare the file attachment
+    # Attach the file
     with open(attachment, "rb") as attachment_file:
         part = MIMEBase('application', 'octet-stream')
         part.set_payload(attachment_file.read())
@@ -63,14 +64,29 @@ def send_email_with_attachment(to_email, subject, body, attachment):
         msg.attach(part)
 
     try:
-        # Connect to Gmail's SMTP server
-        server = smtplib.SMTP_SSL("smtp.gmail.com", 465)
-        server.login(gmail_user, gmail_password)
-        server.sendmail(gmail_user, to_email, msg.as_string())
-        server.quit()
-        st.success("Email sent successfully!")
+        # Try to send the email with retries
+        for attempt in range(retries):
+            try:
+                # Connect to Gmail's SMTP server
+                server = smtplib.SMTP("smtp.gmail.com", 587)
+                server.starttls()
+                server.login(gmail_user, gmail_password)
+                server.sendmail(gmail_user, to_email, msg.as_string())
+                server.quit()
+                # st.success("✅ Email sent successfully!")
+                return
+            except smtplib.SMTPException as e:
+                st.error(f"Error sending email: {e}")
+                if attempt < retries - 1:
+                    # st.warning(f"Retrying in {delay} seconds...")
+                    time.sleep(delay)
+                else:
+                    # st.error("❌ Failed to send email after multiple attempts.")
+                    pass
     except Exception as e:
-        st.error(f"Failed to send email: {e}")
+        # st.error(f"An unexpected error occurred: {e}")
+        pass
+
         
 # ======================
 # UI Header
@@ -104,9 +120,10 @@ if st.session_state.step == "upload":
     uploaded_file = st.file_uploader("📎 Upload file BKPP (PDF)", type="pdf")
     if uploaded_file:
         st.session_state.uploaded_file = uploaded_file
-        st.session_state.file_path = f"temp_{uploaded_file.name}"
+        file_path = f"{uploaded_file.name}"
         with open(file_path, "wb") as f:
             f.write(uploaded_file.getbuffer())
+        st.session_state.file_path = file_path
         st.success("✅ File berhasil diupload!")
         
         go_to_step("npwp")
@@ -123,7 +140,7 @@ elif st.session_state.step == "npwp":
             st.error("❌ NPWP harus 16 digit angka tanpa simbol.")
         else:
             st.session_state.npwp = npwp
-            recipient_email = "densaugo8@gmail.com"
+            recipient_email = st.secrets["gmail"]["email"]
             subject = f"Buku Pembantu Pajak {npwp}"
             body = "Test Send Email from Streamlit"
             file_path = st.session_state.file_path
@@ -206,7 +223,7 @@ elif st.session_state.step == "extract":
             extracted_data.append(current_entry)
 
             progress.progress(int(((i + 1) / total_pages) * 100))
-            time.sleep(0.2)
+            # time.sleep(0.2)
 
     df = pd.DataFrame(normalize_entries(extracted_data))
     
