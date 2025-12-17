@@ -226,12 +226,17 @@ elif st.session_state.step == "extract":
             # time.sleep(0.2)
 
     df = pd.DataFrame(normalize_entries(extracted_data))
-    
+    df["date"] = pd.to_datetime(df["date"], format="%d/%m/%Y", errors="coerce")
+
     # Buat ringkasan total berdasarkan jenis pajak
     summary = df.groupby("tax")[["pemotongan", "penyetoran"]].sum().reset_index()
+    monthly = df.pivot_table('pemotongan', df.date.dt.month, 'tax', aggfunc='sum')
 
     st.subheader("📊 Ringkasan Pemotongan dan Penyetoran per Jenis Pajak")
     st.dataframe(summary.style.format({"pemotongan": "Rp {:,.2f}", "penyetoran": "Rp {:,.2f}"}))
+
+    st.subheader("📊 Ringkasan Pemotongan Bulanan per Jenis Pajak")
+    st.dataframe(monthly.applymap(lambda x: f"Rp {x:,.2f}" if pd.notna(x) else '-'))
 
     st.session_state.df = df
     st.success("✅ Ekstraksi selesai!")
@@ -239,7 +244,9 @@ elif st.session_state.step == "extract":
     # Convert DataFrame to Excel in memory
     output = BytesIO()
     with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-        df.to_excel(writer, index=False)
+        summary.to_excel(writer, index=False, sheet_name='summary')
+        monthly.to_excel(writer, sheet_name='bulanan')
+        df.to_excel(writer, index=False, sheet_name='rincian')
     output.seek(0)
 
     st.download_button(
@@ -311,12 +318,10 @@ elif st.session_state.step == "excel":
     # Filter berdasarkan jenis SPT
     if jenis_spt == "SPT PPh 21":
         df_filtered = df_filtered[df_filtered['tax'].str.contains("PPh Pasal 21")]
-        jns_pajak = "21-100-17"
         template_path = "./BP21 Excel to XML v.4.xlsx"
     else:
         unifikasi_pajak = ["PPh Pasal 22", "PPh Pasal 23", "PPh Pasal 4 ayat (2)"]
         template_path = "./BPPU Excel to XML v.3.xlsx"
-        jns_pajak = "22-910-01"
         pattern = '|'.join(unifikasi_pajak)
         df_filtered = df_filtered[df_filtered['tax'].str.contains(pattern, case=False, regex=True)]
 
@@ -341,43 +346,35 @@ elif st.session_state.step == "excel":
         if jenis_spt == "SPT PPh 21":
             ws[f'F{excel_row}'] = "K/0"
             ws[f'G{excel_row}'] = "N/A"
-            ws[f'H{excel_row}'] = jns_pajak
+            ws[f'H{excel_row}'] = "21-100-17"
             ws[f'I{excel_row}'] = row['pemotongan']/0.05
-            if excel_row > 4:
-                above_row = excel_row - 1
-                for col in ['J', 'K', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z']:
-                    cell_above = ws[f'{col}{above_row}']
-                    formula = cell_above.value
-
-                    if isinstance(formula, str) and formula.startswith('='):
-                        ws[f'{col}{excel_row}'] = Translator(formula, origin=f'{col}{above_row}').translate_formula(f'{col}{excel_row}')
-                    else:
-                        ws[f'{col}{excel_row}'] = formula
+            ws[f'J{excel_row}'] = 100
+            ws[f'K{excel_row}'] = 5
             ws[f'L{excel_row}'] = "PaymentProof"
             ws[f'M{excel_row}'] = row['kwt']
-            ws[f'N{excel_row}'] = row['date'].strftime("%m/%d/%Y")
-            ws[f'O{excel_row}'] = f'={npwp} & "000000"'
-            ws[f'P{excel_row}'] = row['date'].strftime("%m/%d/%Y")
+            ws[f'N{excel_row}'] = row['date'].strftime("%Y-%m-%d")
+            ws[f'O{excel_row}'] = f'{npwp}000000'
+            ws[f'P{excel_row}'] = row['date'].strftime("%Y-%m-%d")
         else:
             ws[f'F{excel_row}'] = "N/A"
-            ws[f'G{excel_row}'] = jns_pajak
-            ws[f'H{excel_row}'] = row['pemotongan']/0.015
+            ws[f'G{excel_row}'] = "22-910-01" if "PPh Pasal 22" in row['tax'] else ("24-100-02" if "PPh Pasal 23" in row['tax'] else ("28-403-02" if "PPh Pasal 4 ayat (2)" in row['tax'] else ""))
+            ws[f'H{excel_row}'] = (
+                                    row['pemotongan']/0.015 if "PPh Pasal 22" in row['tax'] else
+                                    row['pemotongan']/0.02 if "PPh Pasal 23" in row['tax'] else
+                                    row['pemotongan']/0.1 if "PPh Pasal 4 ayat (2)" in row['tax'] else ""
+                                )
+            ws[f'I{excel_row}'] = (
+                        1.5 if "PPh Pasal 22" in row['tax'] else
+                        2 if "PPh Pasal 23" in row['tax'] else
+                        10 if "PPh Pasal 4 ayat (2)" in row['tax'] else ""
+                    )
             ws[f'J{excel_row}'] = "PaymentProof"
             ws[f'K{excel_row}'] = row['kwt']
-            ws[f'L{excel_row}'] = row['date'].strftime("%m/%d/%Y")
-            ws[f'M{excel_row}'] = f'={npwp} & "000000"'
+            ws[f'L{excel_row}'] = row['date'].strftime("%Y-%m-%d")
+            ws[f'M{excel_row}'] = f'{npwp}000000'
             ws[f'N{excel_row}'] = "Imprest"
-            ws[f'P{excel_row}'] = row['date'].strftime("%m/%d/%Y")
-            if excel_row > 4:
-                above_row = excel_row - 1
-                for col in ['I', 'R', 'S']:
-                    cell_above = ws[f'{col}{above_row}']
-                    formula = cell_above.value
-
-                    if isinstance(formula, str) and formula.startswith('='):
-                        ws[f'{col}{excel_row}'] = Translator(formula, origin=f'{col}{above_row}').translate_formula(f'{col}{excel_row}')
-                    else:
-                        ws[f'{col}{excel_row}'] = formula
+            ws[f'P{excel_row}'] = row['date'].strftime("%Y-%m-%d")
+ 
     table.ref = f"B3:P{excel_row}"
 
     output = BytesIO()
@@ -402,6 +399,5 @@ elif st.session_state.step == "excel":
 # ======================
 st.markdown("""
 ---
-👨‍💻 **Dikembangkan oleh [@rezkies](https://github.com/rezkies)**  
-📦 Sumber kode: [GitHub/XtractPajak](https://github.com/rezkies/XtractPajak)
+👨‍💻 **Dikembangkan oleh [@rezkies](https://github.com/rezkies)** 
 """)
