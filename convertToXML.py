@@ -81,7 +81,6 @@ elif st.session_state.step == 'upload':
         "WithholdingDate"
     ]
 
-    type_spt = "Bp21" or "Bpu"
     if type_spt == "Bp21":
         xml_tags = xml_tags_21 
     elif type_spt == "Bpu":
@@ -182,3 +181,4 @@ elif st.session_state.step == 'upload':
     if st.button("⬅️ Kembali"):    
         go_to_step("pilihSPT")
         st.rerun()  
+
