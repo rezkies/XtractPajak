@@ -240,7 +240,7 @@ elif st.session_state.step == "extract":
         lambda col: col.map(
             lambda x: f"Rp {x:,.2f}" if pd.notna(x) else '-'
         )
-    )))
+    ))
 
     st.session_state.df = df
     st.success("✅ Ekstraksi selesai!")
