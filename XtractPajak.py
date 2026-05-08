@@ -236,7 +236,11 @@ elif st.session_state.step == "extract":
     st.dataframe(summary.style.format({"pemotongan": "Rp {:,.2f}", "penyetoran": "Rp {:,.2f}"}))
 
     st.subheader("📊 Ringkasan Pemotongan Bulanan per Jenis Pajak")
-    st.dataframe(monthly.applymap(lambda x: f"Rp {x:,.2f}" if pd.notna(x) else '-'))
+    st.dataframe(monthly.apply(
+        lambda col: col.map(
+            lambda x: f"Rp {x:,.2f}" if pd.notna(x) else '-'
+        )
+    )))
 
     st.session_state.df = df
     st.success("✅ Ekstraksi selesai!")
